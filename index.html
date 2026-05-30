@@ -702,7 +702,10 @@ let currentFile  = null;
 let currentBlob  = null;
 
 // ── INIT ─────────────────────────────────
+let driveApiInitialising = false;
 function initDriveApi(){
+  if(driveApiInitialising || driveReady) return;
+  driveApiInitialising = true;
   gapi.load('client', async ()=>{
     await gapi.client.init({});
     await gapi.client.load('https://www.googleapis.com/discovery/v1/apis/drive/v3/rest');
@@ -785,14 +788,50 @@ async function onSignedIn(token){
 }
 
 function driveSignIn(){
-  if(!driveReady){
-    // gapi not loaded yet — show helpful message
-    alert('Google API is still loading. Please wait a moment and try again.');
-    return;
-  }
-  if(GAPI_CLIENT_ID === 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com'){
+  const d = loadData();
+  const clientId = d.driveClientId || window.GAPI_CLIENT_ID_LIVE || GAPI_CLIENT_ID;
+
+  if(clientId === 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com' || !clientId){
     alert('⚙ Setup needed:\n\nOpen the admin panel → Settings → Google Drive Setup\nto enter your Google Client ID.\n\nSee the HOW-TO-HOST guide for instructions.');
     return;
+  }
+
+  if(!driveReady || !window.gapi){
+    // Auto-retry up to 5s — no alert, just wait and go
+    const btn = document.getElementById('drive-signin-btn');
+    const orig = btn.textContent;
+    btn.textContent = 'Loading…';
+    btn.disabled = true;
+    let tries = 0;
+    const poll = setInterval(()=>{
+      tries++;
+      if(driveReady && tokenClient){
+        clearInterval(poll);
+        btn.textContent = orig;
+        btn.disabled = false;
+        _doSignIn(clientId);
+      } else if(tries > 20){
+        clearInterval(poll);
+        btn.textContent = orig;
+        btn.disabled = false;
+        alert('Google API failed to load. Please check your internet connection and refresh the page.');
+      }
+    }, 250);
+    return;
+  }
+
+  _doSignIn(clientId);
+}
+
+function _doSignIn(clientId){
+  // Ensure tokenClient has the right client ID
+  if(!tokenClient || tokenClient._clientId !== clientId){
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: GAPI_SCOPES,
+      callback: onTokenResponse,
+    });
+    tokenClient._clientId = clientId;
   }
   tokenClient.requestAccessToken({prompt:''});
 }
@@ -1246,51 +1285,28 @@ document.getElementById('caption-input').addEventListener('keydown',e=>{
 });
 
 /* ─────────────────────────────────────────
-   GOOGLE API CALLBACK
-   gapi script calls this when ready
+   GOOGLE API INIT
 ───────────────────────────────────────── */
+let gapiInitDone = false;
 function gapiLoaded(){
-  // Called by gapi script's onload — safe to init
+  if(gapiInitDone) return;
+  gapiInitDone = true;
   initDriveApi();
 }
-
-// Patch driveSignIn to always read client ID from storage (set via admin)
-const _origDriveSignIn = driveSignIn;
-window.driveSignIn = function(){
-  // Pick up client ID from saved data (admin may have set it)
-  const saved = loadData().driveClientId || window.GAPI_CLIENT_ID_LIVE || '';
-  if(saved && saved !== 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com'){
-    // Re-init tokenClient with live client ID if it differs
-    if(driveReady && tokenClient && saved !== tokenClient._clientId){
-      tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: saved,
-        scope: GAPI_SCOPES,
-        callback: onTokenResponse,
-      });
-      tokenClient._clientId = saved;
-    }
-  }
-  _origDriveSignIn();
-};
 
 /* ─────────────────────────────────────────
    INIT — restore saved screen
 ───────────────────────────────────────── */
 renderAskScreen();
 
-// Load gapi once DOM is ready — use onload callback pattern
-window.addEventListener('load', ()=>{
-  // gapi may already be loaded (async) or still loading
-  if(window.gapi) initDriveApi();
-  // else gapiLoaded() called by the script tag's onload
-});
+// Try to init gapi immediately if already loaded, else wait for onload callback
+if(window.gapi){ gapiLoaded(); }
 
 (function(){
   const s=localStorage.getItem(SCREEN_KEY);
   if(s==='map'){showScreen('screen-map');renderMapScreen();}
   else if(s==='yes'){showScreen('screen-yes');renderCelebScreen();}
   else if(s==='memories'){showScreen('screen-memories');}
-  // renderMemories() called after driveSignIn succeeds
 })();
 </script>
 </body>
