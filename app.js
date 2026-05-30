@@ -19,7 +19,7 @@ const DEFAULT = {
   },
   celebrate: {
     sub:    'Obviously. Did you ever doubt it? The adventure begins — and I promise it\'s worth it.',
-    gifUrl: ''
+    gifUrl: 'https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExZDl0OXFyd2F0bGV1Y290Nm04N2hzbTdtZm1vajRybTJnc2sycGgyZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/NxC8VtyxqhMtpLoEEN/giphy.gif'
   },
   map: {
     title: 'The May 31st Plan',
