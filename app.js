@@ -780,21 +780,8 @@ function downloadStrip() {
   const frames  = indices.map(i => memPhotos[i]).filter(Boolean);
   if (!frames.length) return;
 
-  const W = 240, FH = 180, CAP = 22, HEADER = 42, FOOTER = 34, PAD = 16;
-  const totalH = HEADER + (FH + CAP) * 4 + FOOTER + PAD;
-  const canvas = document.createElement('canvas');
-  canvas.width  = W * 2;
-  canvas.height = totalH * 2;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(2, 2);
-
-  // Background
-  ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, W, totalH);
-  // Header
-  ctx.fillStyle = '#888'; ctx.font = 'italic 11px serif'; ctx.textAlign = 'center';
-  ctx.fillText('OUR DAY ♡', W / 2, 26);
-  ctx.strokeStyle = '#333'; ctx.lineWidth = 0.5;
-  ctx.beginPath(); ctx.moveTo(14, 34); ctx.lineTo(W - 14, 34); ctx.stroke();
+  const W = 240, PAD = 16, CAP = 22, HEADER = 42, FOOTER = 34;
+  const FW = W - PAD * 2; // usable frame width = 208px
 
   const loadImg = src => new Promise((res, rej) => {
     if (!src) { rej(new Error('no src')); return; }
@@ -805,21 +792,56 @@ function downloadStrip() {
   });
 
   const dateStr = loadData().map.date || 'our day';
+
   Promise.all(frames.map(f => loadImg(f.blobUrl))).then(imgs => {
+    // Calculate each frame's rendered height based on natural aspect ratio
+    // Portrait max height: 280px, Landscape max height: 160px
+    const frameHeights = imgs.map(img => {
+      const ar = img.width / img.height;
+      const isPortrait = ar < 1;
+      const fh = isPortrait
+        ? Math.min(Math.round(FW / ar), 280)  // tall for portrait
+        : Math.min(Math.round(FW / ar), 160); // shorter for landscape
+      return fh;
+    });
+
+    const totalH = HEADER + frameHeights.reduce((s, h) => s + h + CAP, 0) + FOOTER + PAD;
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = W * 2;
+    canvas.height = totalH * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(2, 2);
+
+    // Background
+    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, W, totalH);
+    // Header text
+    ctx.fillStyle = '#888'; ctx.font = 'italic 11px serif'; ctx.textAlign = 'center';
+    ctx.fillText('OUR DAY ♡', W / 2, 26);
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(14, 34); ctx.lineTo(W - 14, 34); ctx.stroke();
+
     let y = HEADER;
     imgs.forEach((img, i) => {
-      const fw = W - PAD * 2, fh = FH, fx = PAD;
-      const ar = img.width / img.height, far = fw / fh;
-      let sx, sy, sw, sh;
-      if (ar > far) { sw = img.height * far; sh = img.height; sx = (img.width - sw) / 2; sy = 0; }
-      else          { sh = img.width / far;  sw = img.width;  sy = (img.height - sh) / 2; sx = 0; }
-      ctx.fillStyle = '#222'; ctx.fillRect(fx, y, fw, fh);
-      ctx.drawImage(img, sx, sy, sw, sh, fx, y, fw, fh);
+      const fh = frameHeights[i];
+      const fx = PAD;
+      // object-contain: scale to fit within FW × fh, centered
+      const ar  = img.width / img.height;
+      const far = FW / fh;
+      let dw, dh, dx, dy;
+      if (ar > far) { dw = FW; dh = Math.round(FW / ar); dx = fx; dy = y + Math.round((fh - dh) / 2); }
+      else          { dh = fh; dw = Math.round(fh * ar);  dy = y;  dx = fx + Math.round((FW - dw) / 2); }
+
+      ctx.fillStyle = '#222'; ctx.fillRect(fx, y, FW, fh);
+      ctx.drawImage(img, dx, dy, dw, dh);
       y += fh;
+
       ctx.fillStyle = '#777'; ctx.font = 'italic 9px serif'; ctx.textAlign = 'center';
       ctx.fillText(frames[i].caption || '', W / 2, y + 14);
       y += CAP;
     });
+
+    // Footer
     ctx.strokeStyle = '#333'; ctx.beginPath(); ctx.moveTo(14, y + 4); ctx.lineTo(W - 14, y + 4); ctx.stroke();
     ctx.fillStyle = '#666'; ctx.font = '10px serif';
     ctx.fillText(dateStr, W / 2, y + 18);
